@@ -1,0 +1,20 @@
+{
+  "name": "agent-runner",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Multi-agent orchestrator — manager + backend + frontend sub-agents",
+  "main": "orchestrator.js",
+  "scripts": {
+    "start": "node orchestrator.js",
+    "dev": "node --watch orchestrator.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "playwright": "^1.44.0",
+    "ws": "^8.17.0"
+  }
+}

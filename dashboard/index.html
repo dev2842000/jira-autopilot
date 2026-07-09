@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent runner</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0e0e10;
+    --surface:  #18181b;
+    --surface2: #232328;
+    --border:   #2e2e35;
+    --text:     #e4e4e7;
+    --muted:    #71717a;
+    --purple:   #a78bfa;
+    --teal:     #34d399;
+    --blue:     #60a5fa;
+    --amber:    #fbbf24;
+    --red:      #f87171;
+    --green:    #4ade80;
+    --mono:     'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── topbar ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .topbar-title { font-weight: 600; font-size: 14px; color: var(--text); }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    transition: background .3s;
+  }
+  .status-dot.running { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+  .status-dot.done    { background: var(--green); }
+  .status-dot.error   { background: var(--red); }
+  .badge {
+    padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+    background: var(--surface2); color: var(--muted);
+  }
+  .badge.iter { background: #2d2510; color: var(--amber); }
+  .badge.pass { background: #0d2b1a; color: var(--green); }
+  .badge.fail { background: #2b0d0d; color: var(--red); }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+
+  /* ── input bar ── */
+  .input-bar {
+    display: flex; gap: 8px; padding: 10px 16px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .req-input {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 13px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .req-input:focus { border-color: var(--purple); }
+  .req-input::placeholder { color: var(--muted); }
+  .run-btn {
+    padding: 8px 20px; background: var(--purple); color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; white-space: nowrap; transition: opacity .2s;
+  }
+  .run-btn:hover { opacity: .85; }
+  .run-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .small-btn {
+    padding: 6px 10px;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .small-btn:hover { border-color: var(--purple); }
+  .approval-card {
+    display: none;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #171320;
+    flex-shrink: 0;
+  }
+  .approval-card.visible { display: block; }
+  .approval-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .approval-pre {
+    max-height: 220px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  /* ── iteration track ── */
+  .iter-track {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .iter-pip {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 1px solid var(--border); display: flex; align-items: center;
+    justify-content: center; font-size: 10px; font-weight: 600; color: var(--muted);
+    transition: all .3s;
+  }
+  .iter-pip.done   { background: #0d2b1a; border-color: var(--teal); color: var(--teal); }
+  .iter-pip.active { background: #1e1730; border-color: var(--purple); color: var(--purple); }
+  .iter-connector { flex: 1; max-width: 24px; height: 1px; background: var(--border); }
+  .iter-label { margin-left: 8px; color: var(--muted); font-size: 11px; }
+  .iter-elapsed { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  /* ── agent panel layout ── */
+  .panels {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(200px, 1fr));
+    flex: 1;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel {
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .panel:last-child { border-right: none; }
+  .panel-head {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; flex-shrink: 0;
+    background: var(--surface);
+  }
+  .panel-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot-purple { background: var(--purple); }
+  .dot-teal   { background: var(--teal); }
+  .dot-blue   { background: var(--blue); }
+  .dot-amber  { background: var(--amber); }
+  .dot-green  { background: var(--green); }
+  .panel-body {
+    flex: 1; overflow-y: auto; padding: 8px 0;
+    font-family: var(--mono); font-size: 11px; line-height: 1.8;
+    scroll-behavior: smooth;
+  }
+  .log-line {
+    display: flex; gap: 10px; padding: 1px 12px;
+    border-left: 2px solid transparent;
+    transition: background .1s;
+  }
+  .log-line:hover { background: var(--surface2); }
+  .log-time { color: var(--muted); flex-shrink: 0; width: 42px; }
+  .log-tag  { flex-shrink: 0; }
+  .log-msg  { color: var(--text); word-break: break-all; flex: 1; }
+  .log-detail {
+    padding: 3px 12px 6px 64px;
+    border-left: 2px solid transparent;
+  }
+  .log-detail summary {
+    cursor: pointer;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .log-detail pre {
+    margin-top: 6px;
+    padding: 8px;
+    max-height: 280px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+  }
+
+  .tag-info  { color: var(--blue); }
+  .tag-ok    { color: var(--teal); }
+  .tag-err   { color: var(--red); }
+  .tag-warn  { color: var(--amber); }
+  .tag-tool  { color: var(--purple); }
+  .tag-dim   { color: var(--muted); }
+
+  /* ── status bar ── */
+  .statusbar {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    flex-shrink: 0;
+  }
+  .stat {
+    padding: 8px 14px; border-right: 1px solid var(--border);
+  }
+  .stat:last-child { border-right: none; }
+  .stat-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .06em; }
+  .stat-val { font-size: 12px; font-weight: 500; font-family: var(--mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat-val.ok   { color: var(--teal); }
+  .stat-val.fail { color: var(--red); }
+  .stat-val.warn { color: var(--amber); }
+
+  /* ── verdict banner ── */
+  .verdict {
+    display: none; padding: 10px 16px; font-size: 13px; font-weight: 500;
+    border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .verdict.pass { display: block; background: #0d2b1a; color: var(--green); }
+  .verdict.fail { display: block; background: #2b0d0d; color: var(--red); }
+  .verdict.blocked { display: block; background: #2d2510; color: var(--amber); }
+
+  /* ── live browser preview ── */
+  .browser-preview {
+    height: 34vh;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+  .browser-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .browser-title { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+  .browser-url {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 8px;
+    outline: none;
+  }
+  .browser-url:focus { border-color: var(--purple); }
+  .browser-frame {
+    flex: 1;
+    width: 100%;
+    border: 0;
+    background: #fff;
+  }
+
+  /* scrollbar */
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="status-dot" id="statusDot"></div>
+  <span class="topbar-title">Agent runner</span>
+  <span class="badge" id="statusBadge">idle</span>
+  <div class="topbar-right">
+    <span id="topbarInfo">ready</span>
+  </div>
+</div>
+
+<div class="input-bar">
+  <input class="req-input" id="reqInput" placeholder="Type your requirement e.g. 'verify transfer webhook reaches frontend and triggers balance refresh'" />
+  <button class="run-btn" id="runBtn" onclick="startRun()">Run ↗</button>
+</div>
+
+<div class="iter-track" id="iterTrack">
+  <span class="iter-label" style="color:var(--muted)">Iterations will appear here</span>
+  <span class="iter-elapsed" id="elapsedLabel"></span>
+</div>
+
+<div class="approval-card" id="approvalCard">
+  <div class="approval-head">
+    <div class="panel-dot dot-purple"></div>
+    <span>Roadmap approval required</span>
+  </div>
+  <pre class="approval-pre" id="approvalRoadmap"></pre>
+  <div class="approval-actions">
+    <button class="run-btn" id="approveBtn" onclick="approveRoadmap()">Approve roadmap</button>
+    <button class="small-btn" id="rejectBtn" onclick="rejectRoadmap()">Reject</button>
+  </div>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-dot dot-purple"></div>
+      Project Manager
+    </div>
+    <div class="panel-body" id="log-planner"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-dot dot-amber"></div>
+      Tech Lead
+    </div>
+    <div class="panel-body" id="log-manager"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-dot dot-teal"></div>
+      Backend agent
+    </div>
+    <div class="panel-body" id="log-backend"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-dot dot-blue"></div>
+      Frontend agent
+    </div>
+    <div class="panel-body" id="log-frontend"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-dot dot-green"></div>
+      QA / Cypress
+    </div>
+    <div class="panel-body" id="log-qa"></div>
+  </div>
+</div>
+
+<!-- <div class="browser-preview">
+  <div class="browser-head">
+    <div class="panel-dot dot-blue"></div>
+    <span class="browser-title">Browser preview</span>
+    <input class="browser-url" id="previewUrl" placeholder="http://localhost:3000" />
+    <button class="small-btn" onclick="loadPreview()">Load</button>
+    <button class="small-btn" onclick="refreshPreview()">Refresh</button>
+    <button class="small-btn" onclick="openPreview()">Open</button>
+  </div>
+  <iframe class="browser-frame" id="browserFrame" title="Frontend preview"></iframe>
+</div> -->
+
+<div class="statusbar">
+  <div class="stat">
+    <div class="stat-label">Project Manager</div>
+    <div class="stat-val" id="stat-planner">—</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Tech Lead</div>
+    <div class="stat-val" id="stat-manager">—</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Backend</div>
+    <div class="stat-val" id="stat-backend">—</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Frontend</div>
+    <div class="stat-val" id="stat-frontend">—</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">QA</div>
+    <div class="stat-val" id="stat-qa">—</div>
+  </div>
+</div>
+
+<div class="verdict" id="verdictBanner"></div>
+
+<script>
+  let maxIters = 3
+  let startTime = null
+  let elapsedTimer = null
+  let currentIteration = 0
+  let es = null
+  let frontendUrl = 'http://localhost:3000'
+  let activeRunId = null
+
+  async function loadDashboardConfig() {
+    try {
+      const res = await fetch('/config')
+      if (!res.ok) throw new Error(await res.text())
+      const cfg = await res.json()
+      frontendUrl = cfg.frontendUrl || frontendUrl
+      maxIters = cfg.maxIterations || maxIters
+    } catch {}
+
+    const input = document.getElementById('previewUrl')
+    if (input) {
+      input.value = frontendUrl
+      loadPreview()
+    }
+  }
+
+  // ── SSE connection ──────────────────────────────────────────────────────────
+  function connectSSE() {
+    es = new EventSource('/stream')
+
+    const handlers = {
+      'run:start':        onRunStart,
+      'run:state':        onRunState,
+      'run:memory-hit':   onMemoryHit,
+      'run:memory-miss':  onMemoryMiss,
+      'run:approval-required': onApprovalRequired,
+      'run:approved':     onRunApproved,
+      'run:rejected':     onRunRejected,
+      'run:done':         onRunDone,
+      'run:error':        onRunError,
+      'iteration:start':  onIterStart,
+      'iteration:dispatch': onIterDispatch,
+      'iteration:done':   onIterDone,
+      'agent:planner':    onPlannerEvent,
+      'agent:manager':    onManagerEvent,
+      'agent:backend':    onBackendEvent,
+      'agent:frontend':   onFrontendEvent,
+      'agent:qa':         onQaEvent,
+    }
+
+    for (const [evt, fn] of Object.entries(handlers)) {
+      es.addEventListener(evt, e => fn(JSON.parse(e.data)))
+    }
+
+    es.onerror = () => setStatus('error', 'Connection lost — reload to reconnect')
+  }
+
+  // ── run lifecycle ───────────────────────────────────────────────────────────
+  function onRunStart(d) {
+    activeRunId = d.runId
+    clearLogs()
+    setStatus('running', `${d.requirement.slice(0, 60)}…`)
+    setBadge('iter', 'running')
+    startTime = Date.now()
+    elapsedTimer = setInterval(updateElapsed, 1000)
+    buildIterTrack(maxIters)
+    log('planner', 'info', `Requirement received`)
+    log('planner', 'dim',  `"${d.requirement}"`)
+    if (d.historyFile) logDetail('planner', 'dim', 'History file', d.historyFile)
+  }
+
+  function onRunState(d) {
+    setBadge('iter', d.state)
+    const panel = ['memory_lookup', 'planning', 'awaiting_approval'].includes(d.state) ? 'planner' : 'manager'
+    log(panel, 'info', `State: ${d.state}`)
+  }
+
+  function onMemoryHit(d) {
+    document.getElementById('stat-planner').textContent = d.approved ? 'memory approved' : 'memory hit'
+    document.getElementById('stat-planner').className = 'stat-val ok'
+    log('planner', 'ok', `Memory hit: ${d.matchedBy} from ${d.sourceRunId}`)
+    logDetail('planner', 'info', 'Reused roadmap from memory', {
+      sourceRunId: d.sourceRunId,
+      matchedBy: d.matchedBy,
+      approved: d.approved,
+      finalVerdict: d.finalVerdict,
+      roadmap: d.roadmap,
+    })
+  }
+
+  function onMemoryMiss() {
+    document.getElementById('stat-planner').textContent = 'planning'
+    document.getElementById('stat-planner').className = 'stat-val warn'
+    log('planner', 'dim', 'No reusable memory found; fetching/planning')
+  }
+
+  function onApprovalRequired(d) {
+    setStatus('running', 'Waiting for roadmap approval')
+    setBadge('iter', 'awaiting approval')
+    const card = document.getElementById('approvalCard')
+    const pre = document.getElementById('approvalRoadmap')
+    pre.textContent = JSON.stringify(d.roadmap, null, 2)
+    card.className = 'approval-card visible'
+    document.getElementById('stat-planner').textContent = 'awaiting approval'
+    document.getElementById('stat-planner').className = 'stat-val warn'
+    logDetail('planner', 'info', 'Roadmap ready for approval', d.roadmap)
+  }
+
+  function onRunApproved() {
+    document.getElementById('approvalCard').className = 'approval-card'
+    setStatus('running', 'Roadmap approved — implementation started')
+    document.getElementById('stat-planner').textContent = 'approved'
+    document.getElementById('stat-planner').className = 'stat-val ok'
+    log('manager', 'ok', 'Roadmap approved')
+  }
+
+  function onRunRejected(d) {
+    document.getElementById('approvalCard').className = 'approval-card'
+    document.getElementById('stat-planner').textContent = 'rejected'
+    document.getElementById('stat-planner').className = 'stat-val fail'
+    log('planner', 'warn', `Roadmap rejected${d.reason ? `: ${d.reason}` : ''}`)
+  }
+
+  function onRunDone(d) {
+    clearInterval(elapsedTimer)
+    activeRunId = null
+    document.getElementById('approvalCard').className = 'approval-card'
+    setStatus('done', `${d.verdict} — ${d.iterations} iteration${d.iterations !== 1 ? 's' : ''}`)
+    setBadge(d.verdict === 'pass' ? 'pass' : 'fail', d.verdict)
+    showVerdict(d.verdict, d.summary)
+    document.getElementById('runBtn').disabled = false
+    document.getElementById('stat-manager').textContent = d.verdict
+    document.getElementById('stat-manager').className = 'stat-val ' + (d.verdict === 'pass' ? 'ok' : 'fail')
+    log('manager', d.verdict === 'pass' ? 'ok' : 'err', `Done — ${d.verdict}: ${d.summary.slice(0, 100)}`)
+  }
+
+  function onRunError(d) {
+    clearInterval(elapsedTimer)
+    activeRunId = null
+    document.getElementById('approvalCard').className = 'approval-card'
+    setStatus('error', d.error)
+    log('manager', 'err', `Error: ${d.error}`)
+    document.getElementById('runBtn').disabled = false
+  }
+
+  // ── iteration events ────────────────────────────────────────────────────────
+  function onIterStart(d) {
+    currentIteration = d.iteration
+    activatePip(d.iteration)
+    log('manager', 'info', `─── Iteration ${d.iteration + 1} ───`)
+  }
+
+  function onIterDispatch(d) {
+    log('manager', 'ok',   `→ BE: ${d.backendInstruction.slice(0, 80)}`)
+    log('manager', 'ok',   `→ FE: ${d.frontendInstruction.slice(0, 80)}`)
+    if (d.qaInstruction) log('manager', 'ok', `→ QA: ${d.qaInstruction.slice(0, 80)}`)
+    log('backend', 'info', `Task received (iter ${d.iteration + 1})`)
+    log('frontend','info', `Task received (iter ${d.iteration + 1})`)
+    log('qa',      'info', `Task received (iter ${d.iteration + 1})`)
+  }
+
+  function onIterDone(d) {
+    donePip(d.iteration)
+    const be = d.backendReport
+    const fe = d.frontendReport
+    const qa = d.qaReport
+    document.getElementById('stat-backend').textContent  = displayAgentStatus('backend', be)
+    document.getElementById('stat-backend').className    = 'stat-val ' + statusClass(be?.status)
+    document.getElementById('stat-frontend').textContent = displayAgentStatus('frontend', fe)
+    document.getElementById('stat-frontend').className   = 'stat-val ' + statusClass(fe?.status)
+    document.getElementById('stat-qa').textContent = displayAgentStatus('qa', qa)
+    document.getElementById('stat-qa').className     = 'stat-val ' + statusClass(qa?.status)
+  }
+
+  // ── agent events ─────────────────────────────────────────────────────────────
+  function onPlannerEvent(d) {
+    if (d.phase === 'thinking') {
+      document.getElementById('stat-planner').textContent = 'planning'
+      document.getElementById('stat-planner').className = 'stat-val warn'
+      log('planner', 'dim',  'Building product requirement and roadmap…')
+    }
+    if (d.phase === 'prompt')     logDetail('planner', 'tool', 'Prompt sent to planning agent', d.prompt)
+    if (d.phase === 'tool-call')   logDetail('planner', 'tool', `Planner tool call: ${d.tool}`, d.input)
+    if (d.phase === 'tool-result') {
+      const ok = d.result?.ok !== false
+      logDetail('planner', ok ? 'ok' : 'warn', `Planner tool result: ${d.tool} → ${ok ? 'ok' : 'check config'}`, d.result)
+    }
+    if (d.phase === 'raw-output') logDetail('planner', 'dim', 'Raw planning output', d.raw)
+    if (d.phase === 'roadmap') {
+      document.getElementById('stat-planner').textContent = d.roadmap?.status ?? 'roadmap'
+      document.getElementById('stat-planner').className = 'stat-val ' + statusClass(d.roadmap?.status === 'ready' ? 'ok' : 'blocked')
+      logDetail('planner', 'ok', 'Roadmap generated', d.roadmap)
+    }
+    if (d.phase === 'parse-error') log('planner', 'err', 'Parse error on planning output')
+  }
+
+  function onManagerEvent(d) {
+    if (d.phase === 'thinking') {
+      document.getElementById('stat-manager').textContent = 'thinking'
+      document.getElementById('stat-manager').className = 'stat-val warn'
+      log('manager', 'dim',  `Tech Lead thinking (iter ${d.iteration + 1})…`)
+    }
+    if (d.phase === 'prompt')     logDetail('manager', 'tool', 'Prompt sent to Tech Lead', d.prompt)
+    if (d.phase === 'decision') {
+      const dec = d.decision
+      logDetail('manager', 'info', 'Tech Lead decision', dec)
+      if (dec.action === 'done') {
+        document.getElementById('stat-manager').textContent = dec.verdict
+        document.getElementById('stat-manager').className = 'stat-val ' + (dec.verdict === 'pass' ? 'ok' : 'fail')
+        log('manager', 'ok', `Verdict: ${dec.verdict}`)
+      } else {
+        document.getElementById('stat-manager').textContent = 'dispatched'
+        document.getElementById('stat-manager').className = 'stat-val ok'
+        log('manager', 'info', `Re-tasking: ${(dec.reasoning || '').slice(0, 100)}`)
+      }
+    }
+    if (d.phase === 'parse-error') log('manager', 'err', 'Parse error on Tech Lead output')
+  }
+
+  function onBackendEvent(d) {
+    if (d.phase === 'start')       log('backend', 'info', `Starting: ${(d.task||'').slice(0, 70)}`)
+    if (d.phase === 'prompt')      logDetail('backend', 'tool', 'Prompt sent to backend agent', d.prompt)
+    if (d.phase === 'assistant')   logDetail('backend', 'info', 'Backend assistant response', d.content)
+    if (d.phase === 'tool-call')   logDetail('backend', 'tool', `Tool call: ${d.tool}`, d.input)
+    if (d.phase === 'tool-result') {
+      const ok = d.result?.ok !== false
+      logDetail('backend', ok ? 'ok' : 'err', `Tool result: ${d.tool} → ${ok ? 'ok' : 'fail'}`, d.result)
+    }
+    if (d.phase === 'done') {
+      const r = d.report
+      logDetail('backend', r.status === 'ok' ? 'ok' : 'err', 'Backend final report', r)
+      log('backend', r.status === 'ok' ? 'ok' : 'err', `Report: ${(r.findings||'').slice(0, 100)}`)
+      if (r.blockers?.length) log('backend', 'warn', `Blockers: ${r.blockers.join(', ')}`)
+    }
+    if (d.phase === 'raw-output') logDetail('backend', 'dim', 'Raw backend output', d.raw)
+    if (d.phase === 'finalizing') log('backend', 'warn', `Tool budget exhausted; forcing final report (${d.reason})`)
+    if (d.phase === 'unexpected-stop') log('backend', 'warn', `Stopped early: ${d.stopReason}`)
+  }
+
+  function onFrontendEvent(d) {
+    if (d.phase === 'start')       log('frontend', 'info', `Starting: ${(d.task||'').slice(0, 70)}`)
+    if (d.phase === 'prompt')      logDetail('frontend', 'tool', 'Prompt sent to frontend agent', d.prompt)
+    if (d.phase === 'assistant')   logDetail('frontend', 'info', 'Frontend assistant response', d.content)
+    if (d.phase === 'tool-call')   logDetail('frontend', 'tool', `Tool call: ${d.tool}`, d.input)
+    if (d.phase === 'tool-result') {
+      const ok = d.result?.ok !== false
+      logDetail('frontend', ok ? 'ok' : 'err', `Tool result: ${d.tool} → ${ok ? 'ok' : 'fail'}`, d.result)
+    }
+    if (d.phase === 'done') {
+      const r = d.report
+      logDetail('frontend', r.status === 'ok' ? 'ok' : 'err', 'Frontend final report', r)
+      log('frontend', r.status === 'ok' ? 'ok' : 'err', `Report: ${(r.findings||'').slice(0, 100)}`)
+      if (r.eventReceived)   log('frontend', 'ok',   `Event received at +${r.eventReceivedAtMs}ms`)
+      if (r.apiCallMade)     log('frontend', 'ok',   `API call: ${r.apiCallMethod} ${r.apiCallMade}`)
+      if (r.blockers?.length) log('frontend', 'warn', `Blockers: ${r.blockers.join(', ')}`)
+    }
+    if (d.phase === 'raw-output') logDetail('frontend', 'dim', 'Raw frontend output', d.raw)
+    if (d.phase === 'finalizing') log('frontend', 'warn', `Tool budget exhausted; forcing final report (${d.reason})`)
+    if (d.phase === 'unexpected-stop') log('frontend', 'warn', `Stopped early: ${d.stopReason}`)
+  }
+
+  function onQaEvent(d) {
+    if (d.phase === 'start')       log('qa', 'info', `Starting: ${(d.task||'').slice(0, 70)}`)
+    if (d.phase === 'prompt')      logDetail('qa', 'tool', 'Prompt sent to QA agent', d.prompt)
+    if (d.phase === 'assistant')   logDetail('qa', 'info', 'QA assistant response', d.content)
+    if (d.phase === 'tool-call')   logDetail('qa', 'tool', `Tool call: ${d.tool}`, d.input)
+    if (d.phase === 'tool-result') {
+      const ok = d.result?.ok !== false
+      logDetail('qa', ok ? 'ok' : 'err', `Tool result: ${d.tool} → ${ok ? 'ok' : 'fail'}`, d.result)
+    }
+    if (d.phase === 'done') {
+      const r = d.report
+      logDetail('qa', r.status === 'ok' ? 'ok' : 'err', 'QA final report', r)
+      log('qa', r.status === 'ok' ? 'ok' : 'err', `Report: ${(r.findings||'').slice(0, 100)}`)
+      if (r.testsPassed != null) log('qa', 'info', `Tests: ${r.testsPassed} passed, ${r.testsFailed ?? 0} failed`)
+      if (r.blockers?.length) log('qa', 'warn', `Blockers: ${r.blockers.join(', ')}`)
+    }
+    if (d.phase === 'raw-output') logDetail('qa', 'dim', 'Raw QA output', d.raw)
+    if (d.phase === 'finalizing') log('qa', 'warn', `Tool budget exhausted; forcing final report (${d.reason})`)
+    if (d.phase === 'unexpected-stop') log('qa', 'warn', `Stopped early: ${d.stopReason}`)
+  }
+
+  // ── UI helpers ──────────────────────────────────────────────────────────────
+  function log(panel, type, msg) {
+    const el = document.getElementById(`log-${panel}`)
+    if (!el) return
+    const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
+    const ss = String(elapsed % 60).padStart(2, '0')
+    const line = document.createElement('div')
+    line.className = 'log-line'
+    line.innerHTML = `<span class="log-time">${mm}:${ss}</span><span class="log-tag tag-${type}">${typeSymbol(type)}</span><span class="log-msg">${escHtml(msg)}</span>`
+    el.appendChild(line)
+    el.scrollTop = el.scrollHeight
+  }
+
+  function logDetail(panel, type, label, value) {
+    const el = document.getElementById(`log-${panel}`)
+    if (!el) return
+    const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
+    const ss = String(elapsed % 60).padStart(2, '0')
+    const detail = document.createElement('details')
+    detail.className = 'log-detail'
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+    detail.innerHTML = `<summary><span class="log-time">${mm}:${ss}</span> <span class="log-tag tag-${type}">${typeSymbol(type)}</span> ${escHtml(label)}</summary><pre>${escHtml(text)}</pre>`
+    el.appendChild(detail)
+    el.scrollTop = el.scrollHeight
+  }
+
+  function typeSymbol(t) {
+    return { info: '›', ok: '✓', err: '✗', warn: '!', tool: '⚙', dim: '·' }[t] ?? '·'
+  }
+
+  function clearLogs() {
+    ;['planner','manager','backend','frontend','qa'].forEach(p => {
+      document.getElementById(`log-${p}`).innerHTML = ''
+      document.getElementById(`stat-${p}`).textContent = '—'
+      document.getElementById(`stat-${p}`).className = 'stat-val'
+    })
+    document.getElementById('verdictBanner').className = 'verdict'
+    document.getElementById('verdictBanner').textContent = ''
+    document.getElementById('approvalCard').className = 'approval-card'
+    document.getElementById('approveBtn').disabled = false
+    document.getElementById('rejectBtn').disabled = false
+  }
+
+  function setStatus(state, msg) {
+    document.getElementById('statusDot').className = 'status-dot ' + state
+    document.getElementById('topbarInfo').textContent = msg ?? ''
+  }
+
+  function setBadge(type, label) {
+    const el = document.getElementById('statusBadge')
+    el.className = 'badge ' + type
+    el.textContent = label
+  }
+
+  function showVerdict(verdict, summary) {
+    const el = document.getElementById('verdictBanner')
+    el.className = 'verdict ' + verdict
+    const icons = { pass: '✓', fail: '✗', blocked: '!' }
+    el.textContent = `${icons[verdict] ?? ''} ${verdict.toUpperCase()} — ${summary}`
+  }
+
+  function buildIterTrack(n) {
+    const track = document.getElementById('iterTrack')
+    track.innerHTML = ''
+    for (let i = 0; i < n; i++) {
+      if (i > 0) {
+        const conn = document.createElement('div')
+        conn.className = 'iter-connector'
+        track.appendChild(conn)
+      }
+      const pip = document.createElement('div')
+      pip.className = 'iter-pip'
+      pip.id = `pip-${i}`
+      pip.textContent = i + 1
+      track.appendChild(pip)
+    }
+    const lbl = document.createElement('span')
+    lbl.className = 'iter-label'
+    lbl.textContent = 'max iterations'
+    lbl.style.color = 'var(--muted)'
+    track.appendChild(lbl)
+    const elapsed = document.createElement('span')
+    elapsed.className = 'iter-elapsed'
+    elapsed.id = 'elapsedLabel'
+    track.appendChild(elapsed)
+  }
+
+  function activatePip(i) {
+    const pip = document.getElementById(`pip-${i}`)
+    if (pip) pip.className = 'iter-pip active'
+  }
+
+  function donePip(i) {
+    const pip = document.getElementById(`pip-${i}`)
+    if (pip) pip.className = 'iter-pip done'
+  }
+
+  function updateElapsed() {
+    if (!startTime) return
+    const s = Math.floor((Date.now() - startTime) / 1000)
+    const el = document.getElementById('elapsedLabel')
+    if (el) el.textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`
+  }
+
+  function statusClass(s) {
+    if (s === 'ok') return 'ok'
+    if (s === 'blocked') return 'warn'
+    if (s === 'fail') return 'fail'
+    return ''
+  }
+
+  function displayAgentStatus(agent, report) {
+    if (!report?.status) return '?'
+    if (agent === 'qa' && report.status === 'blocked') return 'blocked (env)'
+    return report.status
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+  }
+
+  function loadPreview() {
+    const input = document.getElementById('previewUrl')
+    const frame = document.getElementById('browserFrame')
+    const url = input.value.trim()
+    if (!url) return
+    frame.src = url
+  }
+
+  function refreshPreview() {
+    const frame = document.getElementById('browserFrame')
+    if (frame.src) frame.src = frame.src
+    else loadPreview()
+  }
+
+  function openPreview() {
+    const url = document.getElementById('previewUrl').value.trim()
+    if (url) window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  // ── start run ───────────────────────────────────────────────────────────────
+  async function startRun() {
+    const req = document.getElementById('reqInput').value.trim()
+    if (!req) { document.getElementById('reqInput').focus(); return }
+    document.getElementById('runBtn').disabled = true
+
+    try {
+      const res = await fetch('/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirement: req }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      activeRunId = data.runId
+    } catch (e) {
+      alert(`Failed to start: ${e.message}`)
+      document.getElementById('runBtn').disabled = false
+    }
+  }
+
+  async function approveRoadmap() {
+    if (!activeRunId) return
+    document.getElementById('approveBtn').disabled = true
+    document.getElementById('rejectBtn').disabled = true
+    try {
+      const res = await fetch(`/approve/${activeRunId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewer: 'manual' }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+    } catch (e) {
+      alert(`Failed to approve: ${e.message}`)
+      document.getElementById('approveBtn').disabled = false
+      document.getElementById('rejectBtn').disabled = false
+    }
+  }
+
+  async function rejectRoadmap() {
+    if (!activeRunId) return
+    const reason = prompt('Reason for rejecting this roadmap?') || ''
+    document.getElementById('approveBtn').disabled = true
+    document.getElementById('rejectBtn').disabled = true
+    try {
+      const res = await fetch(`/reject/${activeRunId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewer: 'manual', reason }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+    } catch (e) {
+      alert(`Failed to reject: ${e.message}`)
+      document.getElementById('approveBtn').disabled = false
+      document.getElementById('rejectBtn').disabled = false
+    }
+  }
+
+  // enter key submits
+  document.getElementById('reqInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') startRun()
+  })
+
+  const previewInput = document.getElementById('previewUrl')
+  if (previewInput) {
+    previewInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') loadPreview()
+    })
+  }
+
+  loadDashboardConfig()
+  connectSSE()
+</script>
+</body>
+</html>
