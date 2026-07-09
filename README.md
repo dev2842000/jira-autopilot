@@ -1,106 +1,200 @@
-# Agent runner
+# Jira Autopilot
 
-Multi-agent orchestrator that takes any engineering requirement, dispatches it to a backend and frontend sub-agent, and loops until the full flow is verified end-to-end — no manual intervention.
-
-## Structure
+> Picks up your Jira tickets every morning, fixes the code, raises a PR, and comments the summary — no human in the loop.
 
 ```
-agent-runner/
-├── orchestrator.js      ← loop engine + Express server (port 4000)
-├── config.js            ← your repo paths and ports — EDIT THIS FIRST
-├── agents/
-│   ├── manager.js       ← manager agent (fixed system prompt)
-│   ├── backend.js       ← backend sub-agent (fixed role + tools)
-│   └── frontend.js      ← frontend sub-agent (fixed role + tools)
-├── tools/
-│   └── index.js         ← tool implementations (read_file, run_cmd, ws, playwright)
-└── dashboard/
-    └── index.html       ← live visualiser UI (served at localhost:4000)
+Jira ticket → AI agents fix code → GitHub PR → Jira comment
 ```
+
+---
+
+## What it does
+
+Every day at 8 AM, Jira Autopilot:
+
+1. **Fetches open Jira tickets** via JQL query
+2. **Plans a fix** — a planning agent reads the ticket and writes a roadmap
+3. **Executes the fix** — backend + frontend agents work in parallel on your actual codebase
+4. **Verifies** — QA agent runs end-to-end checks until passing or max iterations hit
+5. **Raises a PR** — commits changes to a branch, opens a GitHub pull request
+6. **Comments on Jira** — posts PR link + fix summary back to the ticket
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Daily Runner (8 AM)                │
+│                  scripts/daily-runner.js             │
+└──────────────────────┬──────────────────────────────┘
+                       │ per ticket
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                    Orchestrator                      │
+│  Planner → [Manager → Backend + Frontend + QA] loop │
+└──────────────────────┬──────────────────────────────┘
+                       │
+           ┌───────────┼───────────┐
+           ▼           ▼           ▼
+       GitHub PR   Jira Comment  run history
+```
+
+### Agents
+
+| Agent | Role |
+|---|---|
+| **Planner** | Reads Jira ticket, writes fix roadmap |
+| **Manager** | Decomposes roadmap into tasks, reviews reports, re-tasks on gaps |
+| **Backend** | Reads/writes backend code, runs commands, hits HTTP endpoints |
+| **Frontend** | Reads/writes frontend code, intercepts API calls via Playwright |
+| **QA** | Runs Cypress E2E tests, verifies the full flow |
+
+---
 
 ## Setup
 
-### 1. Place next to your repos
-```
-your-project/
-├── frontend/
-├── backend/
-├── admin/
-└── agent-runner/   ← here
-```
+### 1. Clone and install
 
-### 2. Edit config.js
-Open `config.js` and set the correct relative paths and ports for your repos:
-```js
-paths: {
-  backend:  '../backend',
-  frontend: '../frontend',
-  admin:    '../admin',
-},
-ports: {
-  backend:  3000,
-  frontend: 5173,
-  ...
-}
-```
-
-### 3. Install dependencies
 ```bash
-cd agent-runner
+git clone https://github.com/dev2842000/jira-autopilot.git
+cd jira-autopilot
 npm install
-```
-
-### 4. Install Playwright browser (for frontend interception)
-```bash
 npx playwright install chromium
 ```
 
-### 5. Set your Anthropic API key
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-# or add to a .env file and use dotenv
+### 2. Configure your repos
+
+Edit `config.js` to point at your codebase:
+
+```js
+paths: {
+  backend:  '/absolute/path/to/your/backend',
+  frontend: '/absolute/path/to/your/frontend',
+},
+ports: {
+  backend:  3001,
+  frontend: 3000,
+}
 ```
 
-### 6. Start your existing services
-Make sure your backend (port 3000) and frontend (port 5173) are already running.
+### 3. Set environment variables
 
-### 7. Run the agent runner
+Copy `.env.example` to `.env` and fill in:
+
+```bash
+cp .env.example .env
+```
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Jira
+JIRA_BASE_URL=https://yourcompany.atlassian.net
+JIRA_EMAIL=you@yourcompany.com
+JIRA_API_TOKEN=...
+JIRA_PROJECT_KEY=ENG          # JQL: project = ENG AND status = "Open"
+
+# GitHub (gh CLI handles auth — run `gh auth login` first)
+GITHUB_REPO=org/repo          # where PRs get raised
+```
+
+### 4. Test a single run
+
+```bash
+node scripts/daily-runner.js --dry-run
+```
+
+### 5. Schedule at 8 AM (macOS)
+
+```bash
+node scripts/daily-runner.js --install-cron
+```
+
+This writes a `launchd` plist to `~/Library/LaunchAgents/` and loads it.
+
+---
+
+## Manual / Dashboard mode
+
+For interactive runs with live logs and human approval:
+
 ```bash
 npm start
-# or for auto-reload during dev:
-npm run dev
+# open http://localhost:4000
 ```
 
-### 8. Open the dashboard
+Type a requirement or Jira ticket key (e.g. `ENG-123`) and hit **Run**.
+
+---
+
+## Project structure
+
 ```
-http://localhost:4000
+jira-autopilot/
+├── scripts/
+│   └── daily-runner.js      ← entry point for scheduled runs
+├── orchestrator.js           ← agent loop engine + Express/SSE server
+├── config.js                 ← repo paths, ports, model, limits
+├── history.js                ← run persistence + duplicate detection
+├── agents/
+│   ├── anthropicClient.js    ← Anthropic SDK wrapper with model fallback
+│   ├── planner.js            ← roadmap creation + Jira ticket fetch
+│   ├── manager.js            ← task decomposition + cross-referencing
+│   ├── backend.js            ← backend sub-agent
+│   ├── frontend.js           ← frontend sub-agent
+│   ├── qa.js                 ← QA + Cypress orchestration
+│   ├── jiraMcp.js            ← Jira MCP client (read + write)
+│   └── playbook.js           ← lessons learned injected into prompts
+├── tools/
+│   └── index.js              ← 30+ tools (file, shell, HTTP, browser, git)
+├── dashboard/
+│   └── index.html            ← live React UI (SSE-powered)
+└── runs/                     ← JSON history per run
 ```
 
-Type a requirement and hit Run. Watch the three panels fill up in real time.
+---
 
-## How it works
+## Requirements
 
-1. You type a requirement into the dashboard
-2. Manager agent decomposes it into backend + frontend tasks
-3. Both sub-agents run in parallel — each has a fixed role, tools, and output schema
-4. Sub-agents use tools (read_file, run_command, http_request, monitor_websocket, intercept_api_call) to do real work against your actual running code
-5. Both report back to manager with structured JSON
-6. Manager cross-references reports, identifies gaps, re-tasks if needed
-7. Loop repeats until manager says "done" or max iterations hit
-8. Dashboard shows live logs, iteration progress, and final verdict
+- Node.js 18+
+- [Anthropic API key](https://console.anthropic.com/)
+- [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens)
+- [`gh` CLI](https://cli.github.com/) authenticated (`gh auth login`)
+- Playwright Chromium (`npx playwright install chromium`)
+- Your backend + frontend services running (for agent verification)
 
-## Agent roles (never change)
+---
 
-**Manager** — decomposes requirements, reads reports, re-tasks or closes loop. Never touches code.
+## How agents communicate
 
-**Backend agent** — reads backend source files, runs commands, hits HTTP endpoints, traces execution paths.
+```
+Planner ──roadmap──▶ Manager
+                        │
+               ┌────────┼────────┐
+               ▼        ▼        ▼
+           Backend  Frontend    QA
+               │        │        │
+               └────────┴────────┘
+                        │ structured JSON reports
+                        ▼
+                     Manager
+                (cross-reference, re-task or close)
+```
 
-**Frontend agent** — reads frontend source files, monitors WebSocket/SSE channels, uses Playwright to intercept API calls in a real browser.
+Sub-agents never talk to each other. All coordination goes through the manager.
 
-## Notes
+---
 
-- Agents do NOT modify source files — read and execute only
-- The `intercept_api_call` tool launches a real headless Chromium — requires Playwright installed
-- The `monitor_websocket` tool requires the `ws` package (included in dependencies)
-- Max 5 iterations by default — change in `config.js`
-- All agent communication goes through the manager — sub-agents never talk directly to each other
+## Config reference
+
+```js
+// config.js
+model: 'claude-sonnet-4-5-20250929',
+maxIterations: 3,          // re-task loops before giving up
+agentTimeoutMs: 60_000,    // per-agent wall time
+managerMaxTokens: 1200,
+backendMaxTokens: 16000,
+frontendMaxTokens: 16000,
+qaMaxTokens: 8000,
+```
