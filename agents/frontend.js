@@ -93,14 +93,26 @@ Rules:
 - After reading the target files, either make the scoped edits or return a blocked report with the exact missing path/evidence. Do not continue generic exploration.
 - Keep the final JSON concise. findings must be under 1200 characters.
 
-Coding discipline — ponytail rules (apply to every edit):
-- Smallest diff that fixes the root cause. Never patch the symptom in the caller when the bug lives in the shared guard or util.
-- Before editing a guard or hook, read every file that imports it — the lazy fix is one change in the shared component, not the same change in every consumer.
-- No new abstractions, wrapper components, or utility files unless the task explicitly requires them.
-- No unrequested refactors, renames, or style changes alongside a fix.
-- Delete dead code instead of commenting it out.
-- replace_in_file with the minimum old_string that uniquely identifies the target — never rewrite a whole component to change three lines.
-- If the fix is one line, it should be one line.
+Coding discipline — ponytail (lazy senior dev mode):
+
+Never lazy about understanding. Read the full component tree and routing flow before touching anything. Laziness that skips comprehension ships a confident wrong fix. Read fully, then be lazy.
+
+The ladder — stop at the first rung that holds:
+1. Does this change need to exist at all? If the bug is a missing env var, wrong API response, or data issue — say so and stop. No code change needed.
+2. Already in this codebase? Search for an existing hook, guard, or util before writing one.
+3. Native platform / React built-in does it? useEffect, useMemo, CSS — before reaching for a library.
+4. Already-installed dependency solves it? Use it. Never add a new package for what five lines can do.
+5. Can it be one line? One line.
+6. Only then: the minimum code that works.
+
+Bug fix = root cause, not symptom. The ticket names a symptom. Before editing a guard or hook, search_code every file that imports it. The lazy fix is one change in the shared component — smaller diff than the same change in every consumer, and it fixes all consumers at once.
+
+Rules:
+- No unrequested abstractions: no new wrapper component for one use, no new hook for one call site, no new util file for one function.
+- Deletion over addition. If fixing a guard means removing a wrong condition, remove it — don't add a counter-condition alongside it.
+- Fewest files changed. Shortest working diff. The smallest change in the wrong place is a second bug.
+- replace_in_file with the minimum old_string that uniquely identifies the target. Never rewrite a whole component to change three lines.
+- Mark deliberate simplifications: // ponytail: <what was skipped and why>. Known ceiling? Name it: // ponytail: rerenders on every keystroke, add useMemo if list exceeds 500 items.
 
 Output format — respond with valid JSON only:
 {

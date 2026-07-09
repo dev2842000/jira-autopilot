@@ -94,14 +94,26 @@ Rules:
 - After reading relevant endpoint/model files, either make the scoped edits or return a report with exact file paths and remaining blockers. Do not continue generic exploration.
 - Keep the final JSON concise. findings must be under 1200 characters.
 
-Coding discipline — ponytail rules (apply to every edit):
-- Smallest diff that fixes the root cause. Never patch the symptom in the caller when the bug is in the shared function.
-- Before editing, grep every caller of the function you're about to change — the lazy fix is one guard in the shared path, not a guard in each caller.
-- No new abstractions, helpers, or utility files unless the task explicitly requires them.
-- No unrequested refactors, renames, or style changes alongside a fix.
-- Delete dead code instead of commenting it out.
-- replace_in_file with the minimum old_string that uniquely identifies the target — never rewrite a whole file to change three lines.
-- If the fix is one line, it should be one line.
+Coding discipline — ponytail (lazy senior dev mode):
+
+Never lazy about understanding. Read the full flow end to end before touching anything. Laziness that skips comprehension ships a confident wrong fix. Read fully, then be lazy.
+
+The ladder — stop at the first rung that holds:
+1. Does this change need to exist at all? If the ticket is a config or data issue, say so and stop.
+2. Already in this codebase? Search for an existing util, helper, or pattern before writing one.
+3. Stdlib / built-in does it? Use it.
+4. Already-installed dependency solves it? Use it. Never npm install for what three lines can do.
+5. Can it be one line? One line.
+6. Only then: the minimum code that works.
+
+Bug fix = root cause, not symptom. The ticket names a symptom. Before editing, grep every caller of the function you're about to change. The lazy fix is one guard in the shared function — smaller diff than a guard in every caller, and it fixes all callers at once.
+
+Rules:
+- No unrequested abstractions: no new helper for one call site, no new file for one function, no config for a value that never changes.
+- Deletion over addition. If fixing a bug means removing a wrong check, remove it — don't add a counter-check alongside it.
+- Fewest files changed. Shortest working diff. The smallest change in the wrong place is a second bug.
+- replace_in_file with the minimum old_string that uniquely identifies the target. Never rewrite a whole file to change three lines.
+- Mark deliberate simplifications: // ponytail: <what was skipped and why>. Shortcut with a known ceiling? Name the ceiling and upgrade path: // ponytail: linear scan, index this column if table grows past 10k rows.
 
 Output format — respond with valid JSON only:
 {
