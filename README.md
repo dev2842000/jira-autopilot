@@ -65,7 +65,7 @@ npx playwright install chromium
 
 ### 2. Configure your repos
 
-Edit `config.js` to point at your codebase:
+Edit `config.js` — set absolute paths to your backend and frontend repos:
 
 ```js
 paths: {
@@ -80,38 +80,63 @@ ports: {
 
 ### 3. Set environment variables
 
-Copy `.env.example` to `.env` and fill in:
-
 ```bash
 cp .env.example .env
 ```
 
+Fill in `.env`:
+
 ```env
+# Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Jira
-JIRA_BASE_URL=https://yourcompany.atlassian.net
-JIRA_EMAIL=you@yourcompany.com
-JIRA_API_TOKEN=...
-JIRA_PROJECT_KEY=ENG          # JQL: project = ENG AND status = "Open"
+# Jira — instance URL + API token from https://id.atlassian.com/manage-profile/security/api-tokens
+JIRA_INSTANCE_URL=https://yourcompany.atlassian.net
+JIRA_USER_EMAIL=you@yourcompany.com
+JIRA_API_KEY=your-jira-api-token
 
-# GitHub (gh CLI handles auth — run `gh auth login` first)
-GITHUB_REPO=org/repo          # where PRs get raised
+# Which project to pull tickets from each morning
+JIRA_PROJECT_KEY=ENG
+
+# Optional: override the default JQL entirely
+# JIRA_JQL=project = "ENG" AND status = "To Do" AND labels = "autopilot"
+
+# Jira MCP (used by the planning agent to fetch individual tickets)
+JIRA_MCP_COMMAND=npx
+JIRA_MCP_ARGS_JSON=["-y","jira-mcp"]
+JIRA_MCP_TOOL=get_issue
+JIRA_MCP_ISSUE_KEY_ARGUMENT=issueIdOrKey
 ```
 
-### 4. Test a single run
+> **GitHub auth** — PRs are raised via the `gh` CLI. Run `gh auth login` once and you're done. No extra env vars needed.
+
+### 4. Dry-run to verify Jira connection
+
+Lists tickets from your project without running any agents:
 
 ```bash
-node scripts/daily-runner.js --dry-run
+npm run daily:dry
 ```
 
-### 5. Schedule at 8 AM (macOS)
+### 5. Run once manually
 
 ```bash
-node scripts/daily-runner.js --install-cron
+npm run daily
 ```
 
-This writes a `launchd` plist to `~/Library/LaunchAgents/` and loads it.
+### 6. Schedule at 8 AM (macOS)
+
+```bash
+npm run daily:schedule
+```
+
+Writes a `launchd` plist to `~/Library/LaunchAgents/` and loads it immediately. Logs land in `~/Library/Logs/jira-autopilot/`.
+
+To unschedule:
+```bash
+launchctl unload ~/Library/LaunchAgents/com.jira-autopilot.daily.plist
+rm ~/Library/LaunchAgents/com.jira-autopilot.daily.plist
+```
 
 ---
 
