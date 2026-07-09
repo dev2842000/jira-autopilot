@@ -57,6 +57,12 @@ export const CONFIG = {
   // Example:
   // JIRA_MCP_COMMAND=npx
   // JIRA_MCP_ARGS_JSON='["-y","your-jira-mcp-server"]'
+  github: {
+    token:       process.env.GITHUB_TOKEN ?? '',
+    backendRepo: process.env.GITHUB_BACKEND_REPO ?? '',   // e.g. "org/lunar"
+    frontendRepo: process.env.GITHUB_FRONTEND_REPO ?? '', // e.g. "org/crobo-web"
+  },
+
   jira: {
     projectKey: process.env.JIRA_PROJECT_KEY ?? '',
     jql: process.env.JIRA_JQL ?? '',   // overrides default JQL if set

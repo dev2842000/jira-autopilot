@@ -29,6 +29,55 @@ function buildJql() {
   return `project = "${CONFIG.jira.projectKey}" AND status in ("To Do","Open","In Progress") AND assignee is not EMPTY ORDER BY priority DESC`
 }
 
+// ─── repo cloning ─────────────────────────────────────────────────────────────
+
+function cloneRepo(repoSlug, targetDir) {
+  const token = process.env.GITHUB_TOKEN
+  const url   = token
+    ? `https://x-access-token:${token}@github.com/${repoSlug}.git`
+    : `https://github.com/${repoSlug}.git`
+  execSync(`git clone --depth 1 ${url} ${targetDir}`, { stdio: 'pipe' })
+  // set bot identity for commits inside the clone
+  execSync('git config user.email "autopilot@jira-autopilot"', { cwd: targetDir, stdio: 'pipe' })
+  execSync('git config user.name "Jira Autopilot"',           { cwd: targetDir, stdio: 'pipe' })
+}
+
+// Clone repos into a temp dir, point CONFIG.paths at them, run fn, then clean up.
+// ponytail: mutates CONFIG.paths temporarily — safe because tickets run sequentially.
+// system prompts have the original path baked in (module-level const) but agents
+// use relative paths via tools, which resolve against CONFIG.paths at call time.
+async function withFreshClones(ticketKey, fn) {
+  const backendRepo  = process.env.GITHUB_BACKEND_REPO
+  const frontendRepo = process.env.GITHUB_FRONTEND_REPO
+
+  // no repos configured — run against local paths as before
+  if (!backendRepo && !frontendRepo) return fn()
+
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), `autopilot-${ticketKey}-`))
+  const saved  = { backend: CONFIG.paths.backend, frontend: CONFIG.paths.frontend }
+
+  try {
+    if (backendRepo) {
+      const dir = path.join(runDir, 'backend')
+      console.log(`  cloning ${backendRepo}…`)
+      cloneRepo(backendRepo, dir)
+      CONFIG.paths.backend = dir
+    }
+    if (frontendRepo) {
+      const dir = path.join(runDir, 'frontend')
+      console.log(`  cloning ${frontendRepo}…`)
+      cloneRepo(frontendRepo, dir)
+      CONFIG.paths.frontend = dir
+    }
+    return await fn()
+  } finally {
+    CONFIG.paths.backend  = saved.backend
+    CONFIG.paths.frontend = saved.frontend
+    fs.rmSync(runDir, { recursive: true, force: true })
+    console.log(`  cleaned up ${runDir}`)
+  }
+}
+
 // ─── git helpers (operates on backend or frontend repo) ───────────────────────
 
 function hasUncommittedChanges(repoPath) {
@@ -78,42 +127,43 @@ async function processTicket(ticket) {
     return
   }
 
-  const runId = `autopilot-${key}-${Date.now()}`
-  let result
-  try {
-    result = await runLoop(runId, requirement, { autoApprove: true })
-  } catch (err) {
-    console.error(`  Loop error for ${key}:`, err.message)
-    await commentOnJiraTicket(key, `Jira Autopilot: agent loop crashed — ${err.message}`).catch(() => {})
-    return
-  }
+  await withFreshClones(key, async () => {
+    const runId = `autopilot-${key}-${Date.now()}`
+    let result
+    try {
+      result = await runLoop(runId, requirement, { autoApprove: true })
+    } catch (err) {
+      console.error(`  Loop error for ${key}:`, err.message)
+      await commentOnJiraTicket(key, `Jira Autopilot: agent loop crashed — ${err.message}`).catch(() => {})
+      return
+    }
 
-  console.log(`  verdict: ${result?.verdict}`)
+    console.log(`  verdict: ${result?.verdict}`)
 
-  // raise PRs if agents changed files
-  const prUrls = []
-  if (result?.verdict === 'pass') {
-    for (const [label, repoPath] of [['backend', CONFIG.paths.backend], ['frontend', CONFIG.paths.frontend]]) {
-      if (repoPath && hasUncommittedChanges(repoPath)) {
-        console.log(`  creating PR in ${label}…`)
-        const url = createPr(repoPath, key, result.summary)
-        if (url) { prUrls.push(`${label}: ${url}`); console.log(`  PR: ${url}`) }
+    // raise PRs if agents changed files — read CONFIG.paths here, after clones are set up
+    const prUrls = []
+    if (result?.verdict === 'pass') {
+      for (const [label, repoPath] of [['backend', CONFIG.paths.backend], ['frontend', CONFIG.paths.frontend]]) {
+        if (repoPath && hasUncommittedChanges(repoPath)) {
+          console.log(`  creating PR in ${label}…`)
+          const url = createPr(repoPath, key, result.summary)
+          if (url) { prUrls.push(`${label}: ${url}`); console.log(`  PR: ${url}`) }
+        }
       }
     }
-  }
 
-  // comment on Jira
-  const comment = result?.verdict === 'pass'
-    ? [
-        `✅ Jira Autopilot: fix verified (${result.iterations ?? 0} iteration(s)).`,
-        '',
-        result.summary,
-        '',
-        prUrls.length ? `PRs raised:\n${prUrls.join('\n')}` : 'No code changes committed.',
-      ].join('\n')
-    : `⚠️ Jira Autopilot: ${result?.verdict ?? 'error'} — ${result?.summary ?? 'unknown error'}`
+    const comment = result?.verdict === 'pass'
+      ? [
+          `✅ Jira Autopilot: fix verified (${result.iterations ?? 0} iteration(s)).`,
+          '',
+          result.summary,
+          '',
+          prUrls.length ? `PRs raised:\n${prUrls.join('\n')}` : 'No code changes committed.',
+        ].join('\n')
+      : `⚠️ Jira Autopilot: ${result?.verdict ?? 'error'} — ${result?.summary ?? 'unknown error'}`
 
-  await commentOnJiraTicket(key, comment).catch(err => console.error(`  Jira comment failed:`, err.message))
+    await commentOnJiraTicket(key, comment).catch(err => console.error(`  Jira comment failed:`, err.message))
+  })
 }
 
 // ─── launchd installer (macOS, 8 AM daily) ───────────────────────────────────

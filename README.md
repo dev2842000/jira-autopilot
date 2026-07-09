@@ -108,7 +108,18 @@ JIRA_MCP_TOOL=get_issue
 JIRA_MCP_ISSUE_KEY_ARGUMENT=issueIdOrKey
 ```
 
-> **GitHub auth** — PRs are raised via the `gh` CLI. Run `gh auth login` once and you're done. No extra env vars needed.
+# GitHub — repos are cloned fresh per ticket run (no pre-installed repos needed)
+# Generate at https://github.com/settings/tokens (repo + workflow scopes)
+GITHUB_TOKEN=ghp_...
+GITHUB_BACKEND_REPO=org/your-backend    # e.g. getbit/lunar
+GITHUB_FRONTEND_REPO=org/your-frontend  # e.g. getbit/crobo-web
+```
+
+> **How it works on a server:** each ticket gets a fresh `git clone --depth 1` into a temp dir. Agents work there, changes are committed to a `fix/<TICKET>` branch, a PR is raised, then the temp dir is deleted. No pre-cloned repos needed.
+>
+> For local dev without server repos, omit `GITHUB_BACKEND_REPO` / `GITHUB_FRONTEND_REPO` and the runner falls back to the paths in `config.js`.
+
+```env
 
 ### 4. Dry-run to verify Jira connection
 
