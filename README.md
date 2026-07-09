@@ -233,8 +233,8 @@ At Sonnet pricing (~$3/M input, $15/M output) that's roughly **$0.12–$0.25 per
 |---|---|
 | Tool result truncation (8,000 chars) | ✅ |
 | History summary truncation (1,200 chars) | ✅ |
-| Prompt caching (`cache_control: ephemeral`) | ❌ not implemented — biggest saving |
-| Compact JSON in manager messages | ❌ pretty-printed — ~20% extra tokens |
+| Prompt caching (`cache_control: ephemeral`) | ✅ all 5 agents |
+| Compact JSON in manager messages | ✅ roadmap + 3 reports compacted |
 | Model tiering (Haiku for simple tasks) | ❌ all agents use Sonnet |
 
 Without prompt caching, the system prompt (~400–800 tokens per agent) is re-sent on **every tool loop turn**. Enabling `cache_control: { type: "ephemeral" }` on system prompts cuts re-sent system prompt costs by ~90% after the first call.

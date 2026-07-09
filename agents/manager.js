@@ -1,5 +1,5 @@
 import { CONFIG } from '../config.js'
-import { createAnthropicClient } from './anthropicClient.js'
+import { createAnthropicClient, cachedSystem } from './anthropicClient.js'
 import { playbookSection } from './playbook.js'
 
 const client = createAnthropicClient()
@@ -105,15 +105,15 @@ export async function runManagerAgent({ requirement, roadmap, iteration, backend
     : ''
 
   const userMessage = iteration === 0
-    ? `Requirement:\n${requirement}\n\nApproved roadmap:\n${JSON.stringify(roadmap, null, 2)}\n\nRun history summary:\n${historySummary}${priorPassBlock}\n\nIteration 0. Dispatch scoped tasks or holding tasks. Use the decision tool.`
-    : `Requirement:\n${requirement}\n\nApproved roadmap:\n${JSON.stringify(roadmap, null, 2)}\n\nRun history summary:\n${historySummary}${priorPassBlock}\n\nIteration: ${iteration}\n\nLatest backend report:\n${JSON.stringify(backendReport, null, 2)}\n\nLatest frontend report:\n${JSON.stringify(frontendReport, null, 2)}\n\nLatest QA report:\n${JSON.stringify(qaReport, null, 2)}\n\nUse the decision tool.`
+    ? `Requirement:\n${requirement}\n\nApproved roadmap:\n${JSON.stringify(roadmap)}\n\nRun history summary:\n${historySummary}${priorPassBlock}\n\nIteration 0. Dispatch scoped tasks or holding tasks. Use the decision tool.`
+    : `Requirement:\n${requirement}\n\nApproved roadmap:\n${JSON.stringify(roadmap)}\n\nRun history summary:\n${historySummary}${priorPassBlock}\n\nIteration: ${iteration}\n\nLatest backend report:\n${JSON.stringify(backendReport)}\n\nLatest frontend report:\n${JSON.stringify(frontendReport)}\n\nLatest QA report:\n${JSON.stringify(qaReport)}\n\nUse the decision tool.`
 
   emit('agent:manager', { phase: 'prompt', prompt: userMessage })
 
   const response = await client.messages.create({
     model:      CONFIG.model,
     max_tokens: CONFIG.managerMaxTokens,
-    system:     SYSTEM_PROMPT,
+    system:     cachedSystem(SYSTEM_PROMPT),
     tools:      [MANAGER_DECISION_TOOL],
     tool_choice: {
       type: 'tool',

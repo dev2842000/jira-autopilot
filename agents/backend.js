@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.js'
 import { BACKEND_TOOLS, compactToolResult, executeBackendTool } from '../tools/index.js'
-import { createAnthropicClient } from './anthropicClient.js'
+import { createAnthropicClient, cachedSystem } from './anthropicClient.js'
 import { playbookSection } from './playbook.js'
 
 function parseJSON(raw) {
@@ -21,7 +21,7 @@ async function finalizeFromToolBudget({ messages, lastStopReason, emit }) {
   const response = await client.messages.create({
     model:      CONFIG.model,
     max_tokens: CONFIG.agentMaxTokens,
-    system:     SYSTEM_PROMPT,
+    system:     cachedSystem(SYSTEM_PROMPT),
     messages: [
       ...messages,
       { role: 'user', content: finalPrompt },
@@ -121,7 +121,7 @@ export async function runBackendAgent({ task, iteration, emit }) {
     const response = await client.messages.create({
       model:      CONFIG.model,
       max_tokens: CONFIG.agentMaxTokens,
-      system:     SYSTEM_PROMPT,
+      system:     cachedSystem(SYSTEM_PROMPT),
       tools:      BACKEND_TOOLS,
       messages,
     })

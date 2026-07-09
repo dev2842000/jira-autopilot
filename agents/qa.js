@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.js'
 import { QA_TOOLS, compactToolResult, executeQaTool } from '../tools/index.js'
-import { createAnthropicClient } from './anthropicClient.js'
+import { createAnthropicClient, cachedSystem } from './anthropicClient.js'
 import { playbookSection } from './playbook.js'
 
 function parseJSON(raw) {
@@ -52,7 +52,7 @@ async function finalizeFromToolBudget({ messages, lastStopReason, emit }) {
   const response = await client.messages.create({
     model:      CONFIG.model,
     max_tokens: CONFIG.qaMaxTokens ?? CONFIG.agentMaxTokens,
-    system:     SYSTEM_PROMPT,
+    system:     cachedSystem(SYSTEM_PROMPT),
     messages: [
       ...messages,
       { role: 'user', content: finalPrompt },
@@ -144,7 +144,7 @@ export async function runQaAgent({ task, iteration, emit }) {
     const response = await client.messages.create({
       model:      CONFIG.model,
       max_tokens: CONFIG.qaMaxTokens ?? CONFIG.agentMaxTokens,
-      system:     SYSTEM_PROMPT,
+      system:     cachedSystem(SYSTEM_PROMPT),
       tools:      QA_TOOLS,
       messages,
     })

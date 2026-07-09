@@ -37,3 +37,7 @@ export function createAnthropicClient() {
 
   return client
 }
+
+export function cachedSystem(text) {
+  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }]
+}

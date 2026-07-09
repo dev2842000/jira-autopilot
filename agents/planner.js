@@ -1,5 +1,5 @@
 import { CONFIG } from '../config.js'
-import { createAnthropicClient } from './anthropicClient.js'
+import { createAnthropicClient, cachedSystem } from './anthropicClient.js'
 import { fetchJiraTicket, findJiraTicketKey } from './jiraMcp.js'
 import { playbookSection } from './playbook.js'
 
@@ -112,7 +112,7 @@ export async function runPlanningAgent({ requirement, emit }) {
   const response = await client.messages.create({
     model:      CONFIG.model,
     max_tokens: CONFIG.plannerMaxTokens ?? CONFIG.managerMaxTokens,
-    system:     SYSTEM_PROMPT,
+    system:     cachedSystem(SYSTEM_PROMPT),
     messages:   [
       { role: 'user',      content: userMessage },
       { role: 'assistant', content: '{' },
