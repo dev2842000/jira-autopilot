@@ -47,6 +47,43 @@ function normalizeToolResult(result) {
   }
 }
 
+function jiraRestHeaders() {
+  const creds = Buffer.from(`${process.env.JIRA_USER_EMAIL}:${process.env.JIRA_API_KEY}`).toString('base64')
+  return {
+    'Authorization': `Basic ${creds}`,
+    'Content-Type':  'application/json',
+    'Accept':        'application/json',
+  }
+}
+
+export async function listJiraTickets(jql) {
+  const base = process.env.JIRA_INSTANCE_URL
+  if (!base) throw new Error('JIRA_INSTANCE_URL is not set')
+  const url = `${base}/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=20&fields=summary,description,status,assignee`
+  const res = await fetch(url, { headers: jiraRestHeaders() })
+  if (!res.ok) throw new Error(`Jira list failed: ${res.status} ${await res.text()}`)
+  const data = await res.json()
+  return data.issues ?? []
+}
+
+export async function commentOnJiraTicket(ticketKey, text) {
+  const base = process.env.JIRA_INSTANCE_URL
+  if (!base) throw new Error('JIRA_INSTANCE_URL is not set')
+  const url = `${base}/rest/api/3/issue/${ticketKey}/comment`
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: jiraRestHeaders(),
+    body: JSON.stringify({
+      body: {
+        type: 'doc', version: 1,
+        content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+      },
+    }),
+  })
+  if (!res.ok) throw new Error(`Jira comment failed: ${res.status} ${await res.text()}`)
+  return res.json()
+}
+
 export function findJiraTicketKey(requirement) {
   return pickTicketKey(requirement)
 }

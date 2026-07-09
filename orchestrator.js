@@ -186,7 +186,7 @@ async function runBackendOrSkip({ instruction, iteration, emit }) {
   return report
 }
 
-async function runLoop(runId, requirement) {
+export async function runLoop(runId, requirement, { autoApprove = false } = {}) {
   const historyFile = createRunHistory(runId, requirement)
   const emit = makeEmit(runId, historyFile)
 
@@ -227,15 +227,15 @@ async function runLoop(runId, requirement) {
     }
     recordFinal(historyFile, final)
     emit('run:done', final)
-    return
+    return final
   }
 
   let approval
-  if (memory?.approval?.approved) {
+  if (memory?.approval?.approved || autoApprove) {
     approval = {
       approved: true,
-      reviewer: 'memory',
-      notes: `Reused approval from ${memory.runId}`,
+      reviewer: autoApprove ? 'autopilot' : 'memory',
+      notes: autoApprove ? 'Auto-approved by daily runner' : `Reused approval from ${memory.runId}`,
     }
   } else {
     emit('run:state', { state: 'awaiting_approval' })
@@ -252,7 +252,7 @@ async function runLoop(runId, requirement) {
     recordFinal(historyFile, final)
     emit('run:rejected', { reason: approval.reason ?? '' })
     emit('run:done', final)
-    return
+    return final
   }
 
   emit('run:approved', { roadmap })
@@ -278,7 +278,7 @@ async function runLoop(runId, requirement) {
       recordFinal(historyFile, final)
       emit('run:qa-env-blocked', { qaReport, autoConcluded: true })
       emit('run:done', final)
-      return
+      return final
     }
 
     // ── manager decides ──────────────────────────────────────────────────────
@@ -323,7 +323,7 @@ async function runLoop(runId, requirement) {
       }
       recordFinal(historyFile, final)
       emit('run:done', final)
-      return
+      return final
     }
 
     // ── sub-agents run in parallel ───────────────────────────────────────────
@@ -366,6 +366,7 @@ async function runLoop(runId, requirement) {
   }
   recordFinal(historyFile, final)
   emit('run:done', final)
+  return final
 }
 
 // ─── Express server ───────────────────────────────────────────────────────────
@@ -439,9 +440,12 @@ app.get('/config', (_, res) => res.json({
 // serve the dashboard UI
 app.use(express.static(path.join(__dirname, 'dashboard')))
 
-app.listen(CONFIG.ports.runner, () => {
-  console.log(`\n Agent runner listening on http://localhost:${CONFIG.ports.runner}`)
-  console.log(` Dashboard UI at        http://localhost:${CONFIG.ports.runner}/`)
-  console.log(` SSE stream at          http://localhost:${CONFIG.ports.runner}/stream`)
-  console.log(` POST /run to start a loop\n`)
-})
+// ponytail: only start server when run directly, not when imported by daily-runner
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.listen(CONFIG.ports.runner, () => {
+    console.log(`\n Agent runner listening on http://localhost:${CONFIG.ports.runner}`)
+    console.log(` Dashboard UI at        http://localhost:${CONFIG.ports.runner}/`)
+    console.log(` SSE stream at          http://localhost:${CONFIG.ports.runner}/stream`)
+    console.log(` POST /run to start a loop\n`)
+  })
+}

@@ -6,7 +6,10 @@
   "main": "orchestrator.js",
   "scripts": {
     "start": "node orchestrator.js",
-    "dev": "node --watch orchestrator.js"
+    "dev": "node --watch orchestrator.js",
+    "daily": "node scripts/daily-runner.js",
+    "daily:dry": "node scripts/daily-runner.js --dry-run",
+    "daily:schedule": "node scripts/daily-runner.js --install-cron"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

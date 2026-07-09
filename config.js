@@ -58,6 +58,8 @@ export const CONFIG = {
   // JIRA_MCP_COMMAND=npx
   // JIRA_MCP_ARGS_JSON='["-y","your-jira-mcp-server"]'
   jira: {
+    projectKey: process.env.JIRA_PROJECT_KEY ?? '',
+    jql: process.env.JIRA_JQL ?? '',   // overrides default JQL if set
     mcp: {
       enabled: process.env.JIRA_MCP_ENABLED === 'true' || Boolean(process.env.JIRA_MCP_COMMAND),
       command: process.env.JIRA_MCP_COMMAND ?? '',
