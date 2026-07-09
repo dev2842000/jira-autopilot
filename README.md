@@ -211,6 +211,34 @@ Sub-agents never talk to each other. All coordination goes through the manager.
 
 ---
 
+## Token usage
+
+Each full run (one Jira ticket, one iteration) uses approximately:
+
+| Agent | Input tokens | Output tokens | Notes |
+|---|---|---|---|
+| Planner | ~1,500 | ~800 | One-shot, no tool loop |
+| Manager | ~2,000–4,000 | ~300 | Forced tool call output; re-called each iteration |
+| Backend | ~3,000–8,000 | ~1,500 | Tool loop up to 10 turns; input grows each turn |
+| Frontend | ~3,000–10,000 | ~2,000 | Tool loop up to 24 turns + Playwright |
+| QA | ~2,000–5,000 | ~800 | Tool loop up to 12 turns |
+
+**Typical single-ticket run: ~15,000–30,000 input tokens, ~5,000–8,000 output tokens.**
+
+At Sonnet pricing (~$3/M input, $15/M output) that's roughly **$0.12–$0.25 per ticket**.
+
+### Optimisation status
+
+| Optimisation | Status |
+|---|---|
+| Tool result truncation (8,000 chars) | ✅ |
+| History summary truncation (1,200 chars) | ✅ |
+| Prompt caching (`cache_control: ephemeral`) | ❌ not implemented — biggest saving |
+| Compact JSON in manager messages | ❌ pretty-printed — ~20% extra tokens |
+| Model tiering (Haiku for simple tasks) | ❌ all agents use Sonnet |
+
+Without prompt caching, the system prompt (~400–800 tokens per agent) is re-sent on **every tool loop turn**. Enabling `cache_control: { type: "ephemeral" }` on system prompts cuts re-sent system prompt costs by ~90% after the first call.
+
 ## Config reference
 
 ```js
