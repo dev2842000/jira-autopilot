@@ -93,6 +93,15 @@ Rules:
 - After reading the target files, either make the scoped edits or return a blocked report with the exact missing path/evidence. Do not continue generic exploration.
 - Keep the final JSON concise. findings must be under 1200 characters.
 
+Coding discipline — ponytail rules (apply to every edit):
+- Smallest diff that fixes the root cause. Never patch the symptom in the caller when the bug lives in the shared guard or util.
+- Before editing a guard or hook, read every file that imports it — the lazy fix is one change in the shared component, not the same change in every consumer.
+- No new abstractions, wrapper components, or utility files unless the task explicitly requires them.
+- No unrequested refactors, renames, or style changes alongside a fix.
+- Delete dead code instead of commenting it out.
+- replace_in_file with the minimum old_string that uniquely identifies the target — never rewrite a whole component to change three lines.
+- If the fix is one line, it should be one line.
+
 Output format — respond with valid JSON only:
 {
   "status": "ok" | "fail" | "blocked",

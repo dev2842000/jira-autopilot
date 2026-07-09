@@ -94,6 +94,15 @@ Rules:
 - After reading relevant endpoint/model files, either make the scoped edits or return a report with exact file paths and remaining blockers. Do not continue generic exploration.
 - Keep the final JSON concise. findings must be under 1200 characters.
 
+Coding discipline — ponytail rules (apply to every edit):
+- Smallest diff that fixes the root cause. Never patch the symptom in the caller when the bug is in the shared function.
+- Before editing, grep every caller of the function you're about to change — the lazy fix is one guard in the shared path, not a guard in each caller.
+- No new abstractions, helpers, or utility files unless the task explicitly requires them.
+- No unrequested refactors, renames, or style changes alongside a fix.
+- Delete dead code instead of commenting it out.
+- replace_in_file with the minimum old_string that uniquely identifies the target — never rewrite a whole file to change three lines.
+- If the fix is one line, it should be one line.
+
 Output format — respond with valid JSON only:
 {
   "status": "ok" | "fail" | "blocked",
