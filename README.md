@@ -65,17 +65,22 @@ npx playwright install chromium
 
 ### 2. Configure your repos
 
-Edit `config.js` — set absolute paths to your backend and frontend repos:
+**Server / CI** — set these env vars and the runner clones repos fresh per ticket. No pre-installed repos needed:
+
+```env
+GITHUB_TOKEN=ghp_...
+GITHUB_BACKEND_REPO=org/your-backend
+GITHUB_FRONTEND_REPO=org/your-frontend
+```
+
+**Local dev only** — if those vars are absent, the runner falls back to paths in `config.js`:
 
 ```js
 paths: {
   backend:  '/absolute/path/to/your/backend',
   frontend: '/absolute/path/to/your/frontend',
 },
-ports: {
-  backend:  3001,
-  frontend: 3000,
-}
+ports: { backend: 3001, frontend: 3000 }
 ```
 
 ### 3. Set environment variables
@@ -106,20 +111,12 @@ JIRA_MCP_COMMAND=npx
 JIRA_MCP_ARGS_JSON=["-y","jira-mcp"]
 JIRA_MCP_TOOL=get_issue
 JIRA_MCP_ISSUE_KEY_ARGUMENT=issueIdOrKey
-```
 
-# GitHub — repos are cloned fresh per ticket run (no pre-installed repos needed)
-# Generate at https://github.com/settings/tokens (repo + workflow scopes)
+# GitHub — repos cloned fresh per ticket; generate at https://github.com/settings/tokens (repo + workflow scopes)
 GITHUB_TOKEN=ghp_...
-GITHUB_BACKEND_REPO=org/your-backend    # e.g. getbit/lunar
-GITHUB_FRONTEND_REPO=org/your-frontend  # e.g. getbit/crobo-web
+GITHUB_BACKEND_REPO=org/your-backend
+GITHUB_FRONTEND_REPO=org/your-frontend
 ```
-
-> **How it works on a server:** each ticket gets a fresh `git clone --depth 1` into a temp dir. Agents work there, changes are committed to a `fix/<TICKET>` branch, a PR is raised, then the temp dir is deleted. No pre-cloned repos needed.
->
-> For local dev without server repos, omit `GITHUB_BACKEND_REPO` / `GITHUB_FRONTEND_REPO` and the runner falls back to the paths in `config.js`.
-
-```env
 
 ### 4. Dry-run to verify Jira connection
 
@@ -257,8 +254,13 @@ Without prompt caching, the system prompt (~400–800 tokens per agent) is re-se
 model: 'claude-sonnet-4-5-20250929',
 maxIterations: 3,          // re-task loops before giving up
 agentTimeoutMs: 60_000,    // per-agent wall time
-managerMaxTokens: 1200,
-backendMaxTokens: 16000,
-frontendMaxTokens: 16000,
-qaMaxTokens: 8000,
+managerMaxTokens: 1200,    // output only — manager uses forced tool call
+agentMaxTokens:   3200,    // backend output
+frontendMaxTokens: 5000,
+qaMaxTokens:      4000,
+maxAgentToolTurns:    10,
+maxFrontendToolTurns: 24,
+maxQaToolTurns:       12,
+maxToolTextChars:  8000,   // tool result truncation
+maxHistoryTextChars: 1200, // history summary truncation
 ```

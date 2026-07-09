@@ -1,5 +1,5 @@
 {
-  "name": "agent-runner",
+  "name": "jira-autopilot",
   "version": "1.0.0",
   "type": "module",
   "description": "Multi-agent orchestrator — manager + backend + frontend sub-agents",
